@@ -1,0 +1,54 @@
+Z_GET_PERNR_FOR_SSN 
+Description: Get personnel no. using SSN. 
+
+FUNCTION Z_GET_PERNR_FOR_SSN.
+*"----------------------------------------------------------------------
+*"*"Local interface:
+*"  IMPORTING
+*"     REFERENCE(I_SSN)
+*"     REFERENCE(I_PERMO) TYPE  PIDMO DEFAULT '10'
+*"  EXPORTING
+*"     REFERENCE(O_PERNR) TYPE  PERSNO
+*"     REFERENCE(O_BEGDA) TYPE  BEGDA
+*"     REFERENCE(O_ENDDA) TYPE  ENDDA
+*"  EXCEPTIONS
+*"      NOT_FOUND
+*"      MULTIPLE_FOUND
+*"----------------------------------------------------------------------
+
+*       Global data declarations
+data: w_perid like pa0002-perid,
+      begin of wt occurs 0,
+        pernr like pa0002-pernr,
+        begda like pa0002-begda,
+        endda like pa0002-endda,
+      end   of wt,
+      wt_pernr like pa0002-pernr occurs 0 with header line,
+      w_lines  like sy-tabix.
+* Format PERID as stored on DB
+  w_perid = i_ssn.
+  translate w_perid using '- '.
+  condense w_perid no-gaps.
+* Retreive all PA0002 records for PERID
+  select pernr begda endda into table wt
+  from pa0002
+  where perid eq w_perid
+    and permo eq i_permo
+  order by begda descending.
+  if sy-subrc ne 0.
+    raise not_found.
+  endif.
+* Check if PERID exists for multiple pernr's.
+  loop at wt.
+    wt_pernr = wt-pernr.
+    collect wt_pernr.
+  endloop.
+  describe table wt_pernr lines w_lines.
+  if w_lines gt 1.
+    raise multiple_found.
+  endif.
+  read table wt index 1.
+  o_pernr = wt-pernr.
+  o_begda = wt-begda.
+  o_endda = wt-endda.
+ENDFUNCTION.

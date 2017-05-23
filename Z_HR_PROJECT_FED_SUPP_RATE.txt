@@ -1,0 +1,130 @@
+Z_HR_PROJECT_FED_SUPP_RATE 
+Description: Project the supplemental rate over payments 
+
+FUNCTION Z_HR_PROJECT_FED_SUPP_RATE.
+*"----------------------------------------------------------------------
+*"*"Local interface:
+*"  IMPORTING
+*"     REFERENCE(IN_PERNR) TYPE  PERSNO
+*"     REFERENCE(IN_DATUM) TYPE  DATUM DEFAULT SY-DATUM
+*"     REFERENCE(IN_BEGDA) TYPE  BEGDA OPTIONAL
+*"     REFERENCE(IN_ENDDA) TYPE  ENDDA OPTIONAL
+*"     REFERENCE(IN_PROJ_0014) TYPE  C DEFAULT 'X'
+*"     REFERENCE(IN_PROJ_0015) TYPE  C DEFAULT 'X'
+*"     REFERENCE(IN_PROJ_0267) TYPE  C DEFAULT 'X'
+*"     REFERENCE(IN_PROJ_0221) TYPE  C DEFAULT 'X'
+*"     REFERENCE(IN_PROJ_0221_ML_IF) TYPE  C DEFAULT 'X'
+*"     REFERENCE(IN_PROJ_0416) TYPE  C DEFAULT 'X'
+*"     REFERENCE(IN_PROJ_2010) TYPE  C DEFAULT 'X'
+*"  EXPORTING
+*"     REFERENCE(OUT_TXRTE) TYPE  TXRTE
+*"     REFERENCE(OUT_RATEC_ORIG) TYPE  C
+*"     REFERENCE(OUT_RATEC) TYPE  C
+*"     REFERENCE(OUT_BETRG_OLD) TYPE  MAXBT
+*"     REFERENCE(OUT_BETRG_NEW) TYPE  MAXBT
+*"     REFERENCE(OUT_BETRG1) TYPE  MAXBT
+*"     REFERENCE(OUT_BETRG2) TYPE  MAXBT
+*"     REFERENCE(OUT_TXRTE1) TYPE  TXRTE
+*"     REFERENCE(OUT_TXRTE2) TYPE  TXRTE
+*"     REFERENCE(OUT_TAXES1) TYPE  MAXBT
+*"     REFERENCE(OUT_TAXES2) TYPE  MAXBT
+*"  TABLES
+*"      T_OUT_PROJ_SUPP STRUCTURE  ZHR_PROJ_SUPP OPTIONAL
+*"      T_OUT_RATES STRUCTURE  ZHR_TIERED_RATES OPTIONAL
+*"----------------------------------------------------------------------
+
+*       Global data declarations
+  data: v_begda   like in_begda,
+        v_endda   like in_endda,
+        v_betrg   like out_betrg_old,
+        i_lgart   type lgart   occurs 0 with header line.
+  ranges: r_lgart for g_lgart.
+  clear: out_txrte    , out_ratec    , out_ratec_orig,
+         out_betrg_old, out_betrg_new.
+  refresh: t_out_proj_supp.
+* Set begin and end date to use to select from 0014 / 0015 / 0267
+  perform f_get_date_range using in_pernr in_datum in_begda in_endda
+                           changing v_begda v_endda.
+* Project IT0014 entries.
+  perform f_get_0014_data tables t_out_proj_supp
+                          using  in_pernr
+                                 v_begda
+                                 v_endda
+                                 c_infty_0014
+                                 in_proj_0014.
+* Project IT0015 entries.
+  perform f_get_0015_data tables t_out_proj_supp
+                          using  in_pernr
+                                 v_begda
+                                 v_endda
+                                 c_infty_0015
+                                 in_proj_0015.
+* Project IT0267 entries.
+  perform f_get_0267_data tables t_out_proj_supp
+                          using  in_pernr
+                                 v_begda
+                                 v_endda
+                                 c_infty_0267
+                                 in_proj_0267.
+* Project IT2010 entries.
+  perform f_get_2010_data tables t_out_proj_supp
+                          using  in_pernr
+                                 v_begda
+                                 v_endda
+                                 c_infty_2010
+                                 in_proj_2010.
+* Project IT0416 entries.
+  perform f_get_0416_data tables t_out_proj_supp
+                          using  in_pernr
+                                 v_begda
+                                 v_endda
+                                 c_infty_0416
+                                 in_proj_0416.
+* Project IT0221 entries.
+  perform f_get_0221_data tables t_out_proj_supp
+                          using  in_pernr
+                                 v_begda
+                                 v_endda
+                                 c_infty_0221
+                                 in_proj_0221
+                                 in_proj_0221_ml_if.
+* Get supplemental wage types
+  call function 'Z_HR_GET_FED_SUPP_RATE_WTS'
+    tables
+      t_out_lgart       = i_lgart
+      r_out_lgart       = r_lgart.
+* Only consider supplemental wages!
+  delete t_out_proj_supp where not lgart in r_lgart.
+  loop at t_out_proj_supp.
+    v_betrg = v_betrg + t_out_proj_supp-betrg.
+  endloop.
+* What is the affect of the supplemental wage?
+  call function 'Z_HR_CALC_YTD_FED_SUPP_RATE'
+    exporting
+      in_pernr         = in_pernr
+      in_endda         = v_endda
+      in_betrg         = v_betrg
+      in_taxau         = 'FED'
+    importing
+      out_betrg        = out_betrg_new
+      out_betrg1       = out_betrg1
+      out_betrg2       = out_betrg2
+      out_txrte        = out_txrte
+      out_txrte1       = out_txrte1
+      out_txrte2       = out_txrte2
+      out_taxes1       = out_taxes1
+      out_taxes2       = out_taxes2
+    tables
+      t_out_rates      = t_out_rates.
+  out_betrg_old = out_betrg_new - v_betrg.
+  read table t_out_rates index 1.
+  if sy-subrc eq 0 and t_out_rates-txrte lt out_txrte.
+    out_ratec_orig = c_true.
+  endif.
+  if out_taxes2 gt 0.
+    out_ratec = c_true.
+  endif.
+ENDFUNCTION.
+
+
+
